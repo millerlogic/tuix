@@ -24,10 +24,12 @@ type Desktop struct {
 
 // NewDesktop creates a new desktop, it needs to be added to an Application.
 func NewDesktop() *Desktop {
-	return &Desktop{
+	d := &Desktop{
 		Box:    tview.NewBox(),
 		winMgr: DefaultWindowManager,
 	}
+	d.SetBackgroundColor(tcell.ColorValid + 234)
+	return d
 }
 
 // AddWindow adds a window to the desktop.
@@ -165,7 +167,8 @@ func (d *Desktop) HasFocus() bool {
 }
 
 func (d *Desktop) Draw(screen tcell.Screen) {
-	d.Box.Draw(screen)
+	//d.Box.Draw(screen)
+	d.Box.DrawForSubclass(screen, d)
 	d.winMgr.DesktopDraw(d, screen)
 	if d.client != nil {
 		d.client.Draw(screen)
