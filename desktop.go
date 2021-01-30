@@ -9,7 +9,7 @@ package tuix
 import (
 	"time"
 
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -188,15 +188,11 @@ func (d *Desktop) Focus(delegate func(p tview.Primitive)) {
 
 func (d *Desktop) HasFocus() bool {
 	for _, win := range d.wins {
-		if win.GetFocusable().HasFocus() {
+		if win.HasFocus() {
 			return true
 		}
 	}
 	return d.Box.HasFocus()
-}
-
-func (d *Desktop) GetFocusable() tview.Focusable {
-	return d
 }
 
 func (d *Desktop) Draw(screen tcell.Screen) {
@@ -218,6 +214,25 @@ func (d *Desktop) Draw(screen tcell.Screen) {
 	}
 }
 
+func (d *Desktop) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+	return d.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
+		if d.client != nil && d.client.HasFocus() {
+			if handler := d.client.InputHandler(); handler != nil {
+				handler(event, setFocus)
+				return
+			}
+		}
+		for _, win := range d.wins {
+			if win.HasFocus() {
+				if handler := win.InputHandler(); handler != nil {
+					handler(event, setFocus)
+					return
+				}
+			}
+		}
+	})
+}
+
 func (d *Desktop) lastClickTime() time.Time {
 	return time.Unix(0, d.lastClickTimeMs*1000000)
 }
@@ -226,62 +241,42 @@ func (d *Desktop) withinClickDelay() bool {
 	return time.Now().Before(d.lastClickTime().Add(d.GetDoubleClickDelay()))
 }
 
-func (d *Desktop) ObserveMouseEvent(event *tview.EventMouse) {
-	if event.Action()&tview.MouseClick != 0 {
+func (d *Desktop) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
+	return d.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
 		atX, atY := event.Position()
-		clickPosxy := atX ^ atY<<16
-		if clickPosxy != d.lastClickPosxy || d.clickCount == 0 {
-			d.clickCount = 1
-		} else if d.withinClickDelay() {
-			d.clickCount++
-		} else {
-			d.clickCount = 1
+		if !d.InRect(atX, atY) {
+			return false, nil
 		}
-		d.lastClickTimeMs = time.Now().UnixNano() / 1000000
-		d.lastClickPosxy = clickPosxy
-	}
-}
 
-func (d *Desktop) GetChildren() []tview.Primitive {
-	clen := len(d.wins)
-	if d.client != nil {
-		clen++
-	}
-	children := make([]tview.Primitive, 0, clen)
-	if d.client != nil {
-		children = append(children, d.client)
-	}
-	for _, win := range d.wins {
-		children = append(children, win)
-	}
-	return children
-}
+		if action == tview.MouseLeftClick {
+			clickPosxy := atX ^ atY<<16
+			if clickPosxy != d.lastClickPosxy || d.clickCount == 0 {
+				d.clickCount = 1
+			} else if d.withinClickDelay() {
+				d.clickCount++
+			} else {
+				d.clickCount = 1
+			}
+			d.lastClickTimeMs = time.Now().UnixNano() / 1000000
+			d.lastClickPosxy = clickPosxy
+		}
 
-func findChild(pp, p tview.Primitive) bool {
-	for _, px := range pp.GetChildren() {
-		if px == p {
-			return true
+		// Propagate mouse events; needs to be reverse order, topmost first!
+		for iwin := len(d.wins) - 1; iwin >= 0; iwin-- {
+			win := d.wins[iwin]
+			consumed, capture = win.MouseHandler()(action, event, setFocus)
+			if consumed {
+				return
+			}
 		}
-		if findChild(px, p) {
-			return true
+		if d.client != nil {
+			if handler := d.client.MouseHandler(); handler != nil {
+				consumed, capture = handler(action, event, setFocus)
+				if consumed {
+					return
+				}
+			}
 		}
-	}
-	return false
-}
-
-// FindPrimitive looks for the primitive within the desktop, returns true if found.
-// If it returns (nil, true) then the child is part of the desktop client.
-func (d *Desktop) FindPrimitive(p tview.Primitive) (*Window, bool) {
-	if p == d {
-		return nil, true
-	}
-	if d.client != nil && (d.client == p || findChild(d.client, p)) {
-		return nil, true
-	}
-	for _, win := range d.wins {
-		if win == p || findChild(win, p) {
-			return win, true
-		}
-	}
-	return nil, false
+		return
+	})
 }

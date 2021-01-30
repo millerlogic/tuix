@@ -7,7 +7,7 @@
 package tuix
 
 import (
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -25,13 +25,15 @@ type WindowManager interface {
 	DesktopResized(d *Desktop)
 	DesktopDraw(d *Desktop, screen tcell.Screen)  // allows drawing a wallpaper, etc
 	DefaultDraw(win *Window, screen tcell.Screen) // for a window
-	DefaultInputHandler(win *Window, event *tview.EventKey, setFocus func(p tview.Primitive))
-	DefaultMouseHandler(win *Window, event *tview.EventMouse)
+	DefaultInputHandler(win *Window, event *tcell.EventKey, setFocus func(p tview.Primitive)) (consumed bool)
+	DefaultMouseHandler(win *Window, action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive)
 }
 
 type winMgr struct {
 	theme WindowTheme
 }
+
+var _ WindowManager = &winMgr{}
 
 func (wm *winMgr) Added(win *Window) {
 }
@@ -82,9 +84,10 @@ func (wm *winMgr) DesktopDraw(d *Desktop, screen tcell.Screen) {
 }
 
 func (wm *winMgr) DefaultDraw(win *Window, screen tcell.Screen) {
-	win.Box.Draw(screen)
+	//win.Box.Draw(screen)
+	win.Box.DrawForSubclass(screen, win)
 	x, y, w, h := win.GetRect()
-	focused := win.GetFocusable().HasFocus()
+	focused := win.HasFocus()
 	if !win.noCaption {
 		style := tcell.StyleDefault
 		if focused {
@@ -103,42 +106,54 @@ func (wm *winMgr) DefaultDraw(win *Window, screen tcell.Screen) {
 	if win.resizable && focused && screen.HasMouse() {
 		c, combc, _, _ := screen.GetContent(x+w-1, y+h-1)
 		screen.SetContent(x+w-1, y+h-1, c, combc,
-			tcell.StyleDefault.Foreground(226))
+			tcell.StyleDefault.Foreground(tcell.ColorValid+226))
 	}
 	if win.client != nil {
 		win.client.Draw(screen)
 	}
 }
 
-func (wm *winMgr) DefaultInputHandler(win *Window, event *tview.EventKey, setFocus func(p tview.Primitive)) {
-
+func (wm *winMgr) DefaultInputHandler(win *Window, event *tcell.EventKey, setFocus func(p tview.Primitive)) (consumed bool) {
+	return
 }
 
-func (wm *winMgr) DefaultMouseHandler(win *Window, event *tview.EventMouse) {
-	if event.Action()&tview.MouseDown != 0 {
+func (wm *winMgr) DefaultMouseHandler(win *Window, action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
+	if !win.InRect(event.Position()) && !win.moving && win.resizing == 0 {
+		return
+	}
+	if action == tview.MouseLeftDown {
 		x, y, w, h := win.GetRect()
 		atX, atY := event.Position()
 		if win.border && atY >= y && atY < y+1 { // mouse in caption
 			win.moveX, win.moveY = atX-x, atY-y
 			win.moving = event.Buttons() == tcell.Button1
 		}
-		if !win.moving && win.resizable {
+		if win.moving {
+			consumed = true
+		} else if !win.moving && win.resizable {
 			if atX == x+w-1 {
 				win.resizing |= 1
+				consumed = true
 			}
 			if atY == y+h-1 {
 				win.resizing |= 2
+				consumed = true
 			}
 		}
-	} else if event.Action()&tview.MouseUp != 0 {
-		win.moving = false
-		win.resizing = 0
-	} else if event.Action()&tview.MouseMove != 0 {
+	} else if action == tview.MouseLeftUp {
+		if win.moving || win.resizing != 0 {
+			win.moving = false
+			win.resizing = 0
+			// Move or resize is done, consume but don't capture mouse.
+			return true, nil
+		}
+	} else if action == tview.MouseMove {
 		x, y, w, h := win.GetRect()
 		atX, atY := event.Position()
 		if win.moving {
 			moveX, moveY := atX-x, atY-y
 			win.SetRect(x+(moveX-win.moveX), y+(moveY-win.moveY), w, h)
+			consumed = true
 		} else if win.resizing != 0 {
 			neww := w
 			if win.resizing&1 != 0 {
@@ -149,10 +164,15 @@ func (wm *winMgr) DefaultMouseHandler(win *Window, event *tview.EventMouse) {
 				newh = atY - y + 1
 			}
 			win.SetRect(x, y, neww, newh)
+			consumed = true
 		}
 	}
+	if consumed {
+		capture = win
+		return
+	}
 
-	if event.Action()&tview.MouseClick != 0 {
+	if action == tview.MouseLeftClick {
 		if win.resizable && win.desktop != nil && win.desktop.GetClickCount() == 2 {
 			_, y, _, _ := win.GetRect()
 			_, atY := event.Position()
@@ -164,9 +184,11 @@ func (wm *winMgr) DefaultMouseHandler(win *Window, event *tview.EventMouse) {
 					//if win.resizable {
 					win.SetState(Maximized)
 				}
+				consumed = true
 			}
 		}
 	}
+	return
 }
 
 var defWinMgr = &winMgr{theme: DefaultWindowTheme}
@@ -196,8 +218,8 @@ type WindowTheme struct {
 // These colors were chosen to look decent and readable in most color counts.
 var DefaultWindowTheme = WindowTheme{
 	TitleAlign:               tview.AlignLeft,
-	ActiveCaptionTextColor:   230,
-	ActiveCaptionColor:       26,
-	InactiveCaptionTextColor: 15,
-	InactiveCaptionColor:     239,
+	ActiveCaptionTextColor:   tcell.ColorValid + 230,
+	ActiveCaptionColor:       tcell.ColorValid + 26,
+	InactiveCaptionTextColor: tcell.ColorValid + 15,
+	InactiveCaptionColor:     tcell.ColorValid + 239,
 }

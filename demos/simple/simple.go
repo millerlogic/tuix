@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/millerlogic/tuix"
 	"github.com/rivo/tview"
 )

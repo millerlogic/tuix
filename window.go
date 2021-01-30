@@ -7,7 +7,7 @@
 package tuix
 
 import (
-	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -196,15 +196,11 @@ func (win *Window) Focus(delegate func(p tview.Primitive)) {
 
 func (win *Window) HasFocus() bool {
 	if win.client != nil {
-		if win.client.GetFocusable().HasFocus() {
+		if win.client.HasFocus() {
 			return true
 		}
 	}
 	return win.Box.HasFocus()
-}
-
-func (win *Window) GetFocusable() tview.Focusable {
-	return win
 }
 
 func (win *Window) BringToFront() *Window {
@@ -224,45 +220,76 @@ func (win *Window) BringToFront() *Window {
 	return win
 }
 
-func (win *Window) Activate(app *tview.Application) *Window {
+func (win *Window) Activate(setFocus func(p tview.Primitive)) *Window {
 	win.BringToFront()
-	if !win.GetFocusable().HasFocus() {
-		app.SetFocus(win)
+	if !win.HasFocus() {
+		setFocus(win)
 	}
 	return win
 }
 
 func (win *Window) Draw(screen tcell.Screen) {
-	win.Box.Draw(screen)
 	if win.desktop != nil {
 		win.desktop.winMgr.DefaultDraw(win, screen)
 	} else {
-		win.Box.Draw(screen)
+		//win.Box.Draw(screen)
+		win.Box.DrawForSubclass(screen, win)
 	}
 }
 
 func (win *Window) InputHandler() func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
 	return win.WrapInputHandler(func(event *tcell.EventKey, setFocus func(p tview.Primitive)) {
-		if win.desktop != nil {
-			win.desktop.winMgr.DefaultInputHandler(win, event, setFocus)
+		if win.desktop != nil && win.HasFocus() {
+			if win.desktop.winMgr.DefaultInputHandler(win, event, setFocus) {
+				return // consumed
+			}
+		}
+		if win.client != nil && win.client.HasFocus() {
+			if handler := win.client.InputHandler(); handler != nil {
+				handler(event, setFocus)
+				return
+			}
 		}
 	})
 }
 
-func (win *Window) MouseHandler() func(event *tview.EventMouse) {
-	return win.WrapMouseHandler(func(event *tview.EventMouse) {
-		if win.desktop != nil {
-			win.desktop.winMgr.DefaultMouseHandler(win, event)
-		}
-	})
-}
+func (win *Window) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
+	return win.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
+		mouseInWin := win.InRect(event.Position())
 
-func (win *Window) ObserveMouseEvent(event *tview.EventMouse) {
-	if event.Action()&tview.MouseDown != 0 {
-		if win.autoActivate {
-			win.Activate(event.Application())
+		activated := false
+		if action == tview.MouseLeftDown && mouseInWin {
+			if win.autoActivate {
+				win.Activate(setFocus)
+				activated = true
+			}
 		}
-	}
+
+		if win.desktop != nil {
+			consumed, capture = win.desktop.winMgr.DefaultMouseHandler(win, action, event, setFocus)
+			if consumed {
+				return
+			}
+		}
+
+		if !mouseInWin {
+			return false, nil
+		}
+
+		if win.client != nil {
+			if handler := win.client.MouseHandler(); handler != nil {
+				consumed, capture = handler(action, event, setFocus)
+				if consumed {
+					return
+				}
+			}
+		}
+
+		if activated {
+			consumed = true
+		}
+		return
+	})
 }
 
 func (win *Window) NextWindow() *Window {
