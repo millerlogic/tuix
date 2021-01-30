@@ -62,7 +62,7 @@ func run() error {
 	win2.SetClient(tv, true)
 
 	desktop := tuix.NewDesktop()
-	desktop.SetBackgroundColor(234)
+	desktop.SetBackgroundColor(tcell.ColorValid + 234)
 	//desktop.SetTitle("Desktop").SetBorder(true)
 	desktop.AddWindow(win).AddWindow(win2)
 
