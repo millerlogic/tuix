@@ -7,8 +7,6 @@
 package tuix
 
 import (
-	"time"
-
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -16,24 +14,19 @@ import (
 // Desktop represents an area where windows go.
 type Desktop struct {
 	*tview.Box
-	wins            []*Window // in stack/draw order
-	winMgr          WindowManager
-	client          tview.Primitive
-	lastClickTimeMs int64
-	lastClickPosxy  int
-	autoWinPos      int
-	init            bool
-	clientFullSize  bool
-	clickCount      byte
-	dclickDelay20ms byte
+	wins           []*Window // in stack/draw order
+	winMgr         WindowManager
+	client         tview.Primitive
+	autoWinPos     int
+	init           bool
+	clientFullSize bool
 }
 
 // NewDesktop creates a new desktop, it needs to be added to an Application.
 func NewDesktop() *Desktop {
 	return &Desktop{
-		Box:             tview.NewBox(),
-		winMgr:          DefaultWindowManager,
-		dclickDelay20ms: 500 / 20, /// 500ms is common double-click delay.
+		Box:    tview.NewBox(),
+		winMgr: DefaultWindowManager,
 	}
 }
 
@@ -136,30 +129,6 @@ func (d *Desktop) SetWindowManager(wm WindowManager) {
 	}
 }
 
-// GetClickCount can be used from a mouse event to determine how many clicks,
-// such as 1 for single click, or 2 for double click.
-func (d *Desktop) GetClickCount() int {
-	return int(d.clickCount)
-}
-
-func (d *Desktop) GetDoubleClickDelay() time.Duration {
-	return time.Duration(d.dclickDelay20ms) * 20 * time.Millisecond
-}
-
-func (d *Desktop) SetDoubleClickDelay(dur time.Duration) *Desktop {
-	ms := dur.Milliseconds()
-	dur20ms := ms / 20
-	if ms%20 >= 10 {
-		dur20ms++
-	}
-	if dur20ms >= 255 {
-		dur20ms = 255
-	} else {
-		d.dclickDelay20ms = byte(dur20ms)
-	}
-	return d
-}
-
 func (d *Desktop) SetRect(x, y, width, height int) {
 	d.Box.SetRect(x, y, width, height)
 	if d.client != nil && d.clientFullSize {
@@ -233,32 +202,11 @@ func (d *Desktop) InputHandler() func(event *tcell.EventKey, setFocus func(p tvi
 	})
 }
 
-func (d *Desktop) lastClickTime() time.Time {
-	return time.Unix(0, d.lastClickTimeMs*1000000)
-}
-
-func (d *Desktop) withinClickDelay() bool {
-	return time.Now().Before(d.lastClickTime().Add(d.GetDoubleClickDelay()))
-}
-
 func (d *Desktop) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
 	return d.WrapMouseHandler(func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (consumed bool, capture tview.Primitive) {
 		atX, atY := event.Position()
 		if !d.InRect(atX, atY) {
 			return false, nil
-		}
-
-		if action == tview.MouseLeftClick {
-			clickPosxy := atX ^ atY<<16
-			if clickPosxy != d.lastClickPosxy || d.clickCount == 0 {
-				d.clickCount = 1
-			} else if d.withinClickDelay() {
-				d.clickCount++
-			} else {
-				d.clickCount = 1
-			}
-			d.lastClickTimeMs = time.Now().UnixNano() / 1000000
-			d.lastClickPosxy = clickPosxy
 		}
 
 		// Propagate mouse events; needs to be reverse order, topmost first!

@@ -121,6 +121,7 @@ func (wm *winMgr) DefaultMouseHandler(win *Window, action tview.MouseAction, eve
 	if !win.InRect(event.Position()) && !win.moving && win.resizing == 0 {
 		return
 	}
+
 	if action == tview.MouseLeftDown {
 		x, y, w, h := win.GetRect()
 		atX, atY := event.Position()
@@ -172,8 +173,8 @@ func (wm *winMgr) DefaultMouseHandler(win *Window, action tview.MouseAction, eve
 		return
 	}
 
-	if action == tview.MouseLeftClick {
-		if win.resizable && win.desktop != nil && win.desktop.GetClickCount() == 2 {
+	if action == tview.MouseLeftDoubleClick {
+		if win.resizable && win.desktop != nil {
 			_, y, _, _ := win.GetRect()
 			_, atY := event.Position()
 			if win.border && atY >= y && atY < y+1 { // mouse in caption
