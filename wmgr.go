@@ -15,11 +15,11 @@ import (
 // Note that many Window calls call into the window manager,
 // so if the window manager needs to make changes, it could call back recursively.
 type WindowManager interface {
-	Added(win *Window)                       // window added to desktop
-	Removed(win *Window)                     // window removed from desktop
-	Resized(win *Window)                     // window resized
-	TitleChanged(win *Window)                // window title changed
-	SetState(win *Window, state WindowState) // set window state
+	Added(win *Window)        // window added to desktop
+	Removed(win *Window)      // window removed from desktop
+	Resized(win *Window)      // window resized
+	TitleChanged(win *Window) // window title changed
+	StateChanged(win *Window) // window state changed
 	GetTheme() WindowTheme
 	SetTheme(theme WindowTheme)
 	DesktopResized(d *Desktop)
@@ -47,12 +47,8 @@ func (wm *winMgr) Resized(win *Window) {
 func (wm *winMgr) TitleChanged(win *Window) {
 }
 
-func (wm *winMgr) SetState(win *Window, state WindowState) {
-	if state == win.state {
-		return
-	}
-	win.state = state
-	switch state {
+func (wm *winMgr) StateChanged(win *Window) {
+	switch win.state {
 	case Restored:
 		win.SetRect(win.rx, win.ry, win.rw, win.rh)
 	case Minimized:

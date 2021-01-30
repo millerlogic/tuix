@@ -153,10 +153,9 @@ func (win *Window) GetState() WindowState {
 }
 
 func (win *Window) SetState(state WindowState) *Window {
+	win.state = state
 	if win.desktop != nil {
-		win.desktop.winMgr.SetState(win, state)
-	} else {
-		win.state = state
+		win.desktop.winMgr.StateChanged(win)
 	}
 	return win
 }
